@@ -9,9 +9,29 @@ use IrfanTOOR\Console;
  */
 class Debug
 {
-    protected static $error    = 0;
+    protected static $instance = null;
+    protected static $enabled  = false;
+    protected static $error    = null;
     protected static $level    = 0;
-    protected static $terminal = 0;
+    protected static $terminal = null;
+
+    public function __construct()
+    {
+        register_shutdown_function([$this, 'shutdown']);
+        set_exception_handler(function($obj){
+            $this->exceptionHandler($obj);
+        });
+
+        self::$instance = $this;
+    }
+
+    public static function getInstance()
+    {
+        if (self::$instance)
+            return self::$instance;
+
+        return new static;
+    }
 
     /**
      * Enable Debug with a level
@@ -24,12 +44,15 @@ class Debug
      */
     static function enable($level = 1)
     {
-        if (isset($_SERVER['TERM']))
+        # make sure theat the class gets initialized!
+        $di = self::getInstance();
+
+        if (isset($_SERVER['TERM']) && !isset(self::$terminal))
             self::$terminal = new Console();
 
         self::$level = $level;
-        register_shutdown_function(['\IrfanTOOR\Debug', 'shutdown']);
-        if ($level < 3)
+
+        if ($level < 3 && !self::$enabled)
             ob_start();
 
         if ($level>2)
@@ -39,9 +62,7 @@ class Debug
         else
             error_reporting(0);
 
-        set_exception_handler(function($obj){
-            self::exceptionHandler($obj);
-        });
+        self::$enabled = true;
     }
 
     /**
@@ -124,7 +145,7 @@ class Debug
      * Exception handler to intercept any exceptions
      * Note: its not called dreclty but is used by Debug class
      */
-    static function exceptionHandler($e) {
+    function exceptionHandler($e) {
         ob_get_clean();
 
         self::$error = true;
@@ -166,7 +187,7 @@ class Debug
      * Note: This function is not called directly, but is registered by the
      *       Debug class
      */
-    static function shutdown()
+    function shutdown()
     {
         if (self::$error)
             return;
