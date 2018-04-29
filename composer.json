@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "irfantoor/console": "^0.2.0"
+        "irfantoor/console": "^0.3"
     },
     "autoload": {
         "classmap": [
