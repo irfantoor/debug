@@ -34,5 +34,4 @@ Try including and enabling it in the starting index.php or bootstrap.php file so
 that it can detect any errors in the succeeding files.
 
 
-Debug has a dependency on IrfanTOOR\\Console for dumping the results on the
-console.
+Debug has no external dependency.

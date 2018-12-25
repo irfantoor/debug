@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "irfantoor/console": "^0.3"
+        "php": ">= 7.0"
     },
     "autoload": {
         "classmap": [
