@@ -2,6 +2,10 @@
 
 namespace IrfanTOOR;
 
+use Exception;
+use IrfanTOOR\Console;
+use IrfanTOOR\Debug\Constants;
+
 /**
  * Debug, dump and trace while development
  */
@@ -15,36 +19,11 @@ class Debug
     protected static $instance = null;
 
     /**
-     * Should we apply the colors
+     * Used to lock the Debug class against modification of level
      *
      * @var bool
      */
-    protected $apply = true;
-
-    /**
-     * Colors used by this class
-     *
-     * @var array
-     */    
-    protected $theme = [
-        'error' => '41', # red background
-        'dump'  => '34', # blue forground
-        'trace' => '2',  # dark
-    ];
-
-    /**
-     * True if debug level > 0
-     *
-     * @var bool
-     */
-    protected $enabled  = false;
-
-    /**
-     * If exception handler was called
-     *
-     * @var object
-     */    
-    protected $error    = false;
+    protected static $locked = false;
 
     /**
      * debug level : 0,1,2,3 ...
@@ -56,9 +35,23 @@ class Debug
     /**
      * If we are on a terminal (and not a web app)
      *
-     * @var object
-     */    
+     * @var bool
+     */
     protected $terminal = false;
+
+    /**
+     * IrfanTOOR\Console
+     *
+     * @var bool
+     */
+    protected $console;
+
+    /**
+     * indicates if exceptionHandler was called
+     *
+     * @var bool
+     */
+    protected $exception_handler_called = false;
 
     /**
      * Constructs the Debug instance
@@ -67,30 +60,40 @@ class Debug
      */
     public function __construct($level = 1)
     {
-        $this->level = $level;
+        if (self::$instance)
+            throw new Exception("Use Debug::getInstance, cannot create a new instance", 1);
 
-        if (PHP_SAPI === 'cli')
-            $this->terminal = true;
+        # init instance
+        self::$instance = $this;
 
+        # init
+        $this->level    = $level;
+        $this->terminal = (PHP_SAPI === 'cli') ? true : false;
+        $this->console  = new Console;
+
+        # adjust error reporting
         if ($level === 0) {
             error_reporting(0);
         } else {
-            $this->enabled = true;
             if ($level >= 3) {
                 error_reporting(E_ALL && ~E_NOTICE);    
             } elseif($level > 2) {
-                error_reporting(E_ALL);    
+                error_reporting(E_ALL);
             } else {
                 ob_start();  
             }
         }
 
-        $this->apply = function_exists('posix_isatty') && @posix_isatty(STDOUT);
-
         register_shutdown_function([$this, 'shutdown']);
         set_exception_handler(function($obj){
             $this->exceptionHandler($obj);
+            exit;
         });
+    }
+
+    static function getInstance(Int $level = 0)
+    {
+        return self::$instance ?: new self($level);
     }
 
     /**
@@ -98,10 +101,43 @@ class Debug
      *
      * @param int $level
      */
-    static function enable($level)
+    static function enable(Int $level = 0)
     {
         if (!self::$instance)
-            self::$instance = new Debug($level);
+            self::$instance  = new self($level);
+
+        if (!self::$locked)
+            self::$instance->level = $level;
+    }
+
+    /**
+     * Debug level can not be changed when once locked
+     */
+    static function lock()
+    {
+        self::$locked = true;
+    }
+
+    public function getLevel()
+    {
+        return $this->level;
+    }
+
+    public function getVersion()
+    {
+        return Constants::VERSION;
+    }
+
+    /**
+     * limit the path for security reasons
+     *
+     * @param string $file
+     */
+    function limitPath($file)
+    {
+        $x = explode('/', $file);
+        $l = count($x);
+        return ($l>1) ? $x[$l-2] . '/' . $x[$l-1] : $file;
     }
 
     /**
@@ -112,16 +148,33 @@ class Debug
      */
     static function dump($var, $trace = true)
     {
-        if (!self::$instance)
-            self::$instance = new Debug(0);
+        $d = Debug::getInstance();
 
-        $d = self::$instance;
-
-        if (!$d->level)
+        if ($d->level < 1) {
             return;
+        }
 
         if ($d->terminal) {
-            $d->_writeln(print_r($var, 1), 'dump');
+            $c = $d->console;
+
+            if (!is_array($var)) {
+                $c->writeln(print_r($var, 1), 'blue');
+            } else {
+                $lines = explode("\n", print_r($var, 1));
+                foreach ($lines as $line) {
+                    preg_match_all('|(.*)\[(.*)\] \=\>(.*)|', $line, $m);
+                    
+                    if (!isset($m[0][0])) {
+                        $c->writeln($line);
+                    } else {
+                        $c->write($m[1][0] . '[', 'blue');
+                        $c->write($m[2][0], 'light_red');
+                        $c->write('] =>', 'blue');
+                        $c->writeln($m[3][0], 'blue');
+                    }
+                }
+            }
+
         } else {
             $txt = preg_replace('/\[(.*)\]/u', '[<span style="color:#d00">$1</span>]', print_r($var, 1));
             echo '<pre style="color:blue">' . $txt . "</pre>";
@@ -156,23 +209,11 @@ class Debug
                 $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
                 $txt = '-- file: ' . $file . ', line: ' . $line . ', ' . $ftag;
                 if ($this->terminal)
-                    $this->_writeln( $txt, 'trace');
+                    $this->console->writeln( $txt, 'dark');
                 else
                     echo '<code style="color:#999">' . $txt . '</code><br>';
             }
         }
-    }
-
-    /**
-     * limit the path for security reasons
-     *
-     * @param string $file
-     */
-    function limitPath($file)
-    {
-        $x = explode('/', $file);
-        $l = count($x);
-        return ($l>1) ? $x[$l-2] . '/' . $x[$l-1] : $file;
     }
 
     /**
@@ -181,8 +222,7 @@ class Debug
      */
     function exceptionHandler($e) {
         ob_get_clean();
-
-        $this->error = true;
+        $this->exception_handler_called = true;
 
         if (!$this->level)
             return;
@@ -190,20 +230,25 @@ class Debug
         if (is_object($e)) {
             $class   = 'Exception';
             $message = $e->getMessage();
-            $file    = self::limitPath($e->getFile());
+            $file    = $this->limitPath($e->getFile());
             $line    = $e->getLine();
             $type    = '';
             $trace   = $e->getTrace();
-        }
-        else {
+        } else {
             $class = 'Error';
             extract($e);
             $type .= ' - ';
         }
 
         if ($this->terminal) {
-            $this->_writeln([$class . ': ' . $type . $message], 'error');
-            $this->_writeln('file ' . $file . ', line: ' . $line , 'dump');
+            $c = $this->console;
+
+            $c->writeln(' ', 'bg_light_red');
+            $c->write(' ', 'bg_light_red');
+            $c->writeln(' ' . $class . ': ' . $type . $message);
+            $c->writeln(' ', 'bg_light_red');
+
+            $c->writeln('file ' . $file . ', line: ' . $line , 'dark');
         } else {
             $body =
             '<div style="border-left:4px solid #d00; padding:6px;">' .
@@ -217,47 +262,15 @@ class Debug
     }
 
     /**
-     * Writes $text to console with a selected style
-     *
-     * @param string $text
-     * @param string $style 'dump', 'trace' or 'error'
-     */
-    private function _writeln($text, $style)
-    {
-        if (is_array($text)) {
-            $max = 0;
-            foreach($text as $txt) {
-                $max = max($max, strlen($txt));
-            }
-            $outline = str_repeat(' ', $max + 4);
-            $this->_writeln($outline, $style);
-            foreach($text as $txt) {
-                $len = strlen($txt);
-                $pre_space = str_repeat(' ', 2);
-                $post_space = str_repeat(' ', $max+2 - $len);
-                $this->_writeln($pre_space . $txt . $post_space, $style);
-            }
-            $this->_writeln($outline, $style);
-        } else {
-            if ($this->apply) {
-                echo "\033[" . $this->theme[$style] . 'm' . $text . "\033[0m";
-            } else {
-                echo $text;    
-            }
-        }
-
-        echo PHP_EOL;
-    }
-
-    /**
      * Called at the end of execution to dump the timing or other details
      * Note: This function is not called directly, but is registered by the
      *       Debug class
      */
     function shutdown()
     {
-        if ($this->error)
+        if ($this->exception_handler_called) {
             return;
+        }
 
         if (ob_get_level() > 0)
             ob_get_flush();
@@ -266,13 +279,12 @@ class Debug
             echo ($this->terminal ? PHP_EOL : '<br>');
             $t  = microtime(true) - $_SERVER['REQUEST_TIME_FLOAT'];
             $te = sprintf(' %.2f mili sec.', $t * 1000);
-            # self::dump('elapsed time: ' . $te, 0);
-            $this->dump('Elapsed time: ' . $te, 0);
+            self::dump('Elapsed time: ' . $te, 0);
         }
 
         if ($this->level > 1) {
             $files = get_included_files();
-            $this->dump($files, 0);
+            self::dump($files, 0);
         }
     }
 }
