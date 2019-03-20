@@ -33,5 +33,3 @@ Debug::dump($response->getHeaders());
 Try including and enabling it in the starting index.php or bootstrap.php file so
 that it can detect any errors in the succeeding files.
 
-
-Debug has no external dependency.
