@@ -25,5 +25,5 @@ class Constants
 {
     public const NAME        = 'Irfan\'s Debug';
     public const DESCRIPTION = 'Debug, dump and trace while development';
-    public const VERSION     = '0.3.1';
+    public const VERSION     = '0.3.2';
 }

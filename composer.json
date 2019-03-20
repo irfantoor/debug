@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": ">= 7.0",
-        "irfantoor/console": "^0.4.0"
+        "irfantoor/console": "dev-master"
     },
     "autoload": {
         "classmap": [
