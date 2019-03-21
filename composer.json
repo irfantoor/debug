@@ -17,5 +17,9 @@
         "classmap": [
             "src/"
         ]
+    },
+    "require-dev": {
+        "irfantoor/command": "dev-master",
+        "irfantoor/test": "dev-master"
     }
 }
