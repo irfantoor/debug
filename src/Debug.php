@@ -1,6 +1,6 @@
 <?php
 
-namespace IrfanTOOR;
+namespace IrfanTOOR {
 
 use Exception;
 use IrfanTOOR\Console;
@@ -11,6 +11,10 @@ use IrfanTOOR\Debug\Constants;
  */
 class Debug
 {
+    const NAME        = "Irfan's Debug";
+    const DESCRIPTION = "Debug, dump and trace while development";
+    const VERSION     = "0.4.1";
+
     /**
      * Contains a pointer to the only instance of this class
      *
@@ -30,70 +34,85 @@ class Debug
      *
      * @var int
      */
-    protected $level    = null;
+    protected static $level    = 0;
 
     /**
      * If we are on a terminal (and not a web app)
      *
      * @var bool
      */
-    protected $terminal = false;
+    protected static $terminal = false;
 
     /**
      * IrfanTOOR\Console
      *
      * @var bool
      */
-    protected $console;
+    protected static $console;
 
     /**
      * indicates if exceptionHandler was called
      *
      * @var bool
      */
-    protected $exception_handler_called = false;
+    protected static $exception_handler_called = false;
 
     /**
      * Constructs the Debug instance
      *
      * @param int $level
      */
-    public function __construct($level = 1)
+    public function __construct()
     {
         if (self::$instance)
             throw new Exception("Use Debug::getInstance, cannot create a new instance", 1);
 
-        # init instance
-        self::$instance = $this;
-
-        # init
-        $this->level    = $level;
-        $this->terminal = (PHP_SAPI === 'cli') ? true : false;
-        $this->console  = new Console;
-
-        # adjust error reporting
-        if ($level === 0) {
-            error_reporting(0);
-        } else {
-            if ($level >= 3) {
-                error_reporting(E_ALL && ~E_NOTICE);    
-            } elseif($level > 2) {
-                error_reporting(E_ALL);
-            } else {
-                ob_start();  
-            }
+        if (($pos = strpos(__DIR__, 'vendor')) === false) {
+            $pos = strpos(__DIR__, 'src');
         }
 
-        register_shutdown_function([$this, 'shutdown']);
+        define('DEBUG_ROOT', substr(__DIR__, 0, $pos));
+
+        register_shutdown_function(function() {
+            if (self::$exception_handler_called) {
+                return;
+            }
+
+            // if (ob_get_level() > 1)
+            //     ob_get_flush();
+
+            if (self::$level) {
+                self::dump(
+                    sprintf(
+                        "time elapsed: %04.2f mili sec.", 
+                        (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) * 1000
+                    ), 
+                    false
+                );
+            }
+            
+            if (self::$level > 2) {
+                $files = [];
+                $i = 1;
+                foreach (get_included_files() as $file) {
+                    $files[$i++] = self::limitPath($file);
+                }
+                self::dump($files, false);
+            }
+        });
+
         set_exception_handler(function($obj){
-            $this->exceptionHandler($obj);
+            self::exceptionHandler($obj);
             exit;
         });
+
+        # init instance
+        self::$instance = $this;
     }
 
-    static function getInstance(Int $level = 0)
+    static function getInstance()
     {
-        return self::$instance ?: new self($level);
+        return self::$instance ?: new self();
     }
 
     /**
@@ -103,11 +122,39 @@ class Debug
      */
     static function enable(Int $level = 0)
     {
-        if (!self::$instance)
-            self::$instance  = new self($level);
+        if (self::$locked) {
+            return;
+        }
 
-        if (!self::$locked)
-            self::$instance->level = $level;
+        self::getInstance();
+
+        self::$level = $level;
+
+        # init
+        if (PHP_SAPI === 'cli') {
+            self::$terminal = true;
+            self::$console  = new Console;
+        }
+
+        # adjust error reporting
+        switch ($level)
+        {
+            case 0:
+                error_reporting(0);
+                break;
+
+            case 1:
+                if (ob_get_level() === 0)
+                    ob_start();
+                break;
+
+            case 2:
+                error_reporting(E_ALL && ~E_NOTICE);
+                break;
+
+            default:
+                error_reporting(E_ALL);
+        }
     }
 
     /**
@@ -118,14 +165,9 @@ class Debug
         self::$locked = true;
     }
 
-    public function getLevel()
+    static function getLevel()
     {
-        return $this->level;
-    }
-
-    public function getVersion()
-    {
-        return Constants::VERSION;
+        return self::$level;
     }
 
     /**
@@ -133,39 +175,66 @@ class Debug
      *
      * @param string $file
      */
-    function limitPath($file)
+    static function limitPath($file)
     {
-        $x = explode('/', $file);
-        $l = count($x);
-        return ($l>1) ? $x[$l-2] . '/' . $x[$l-1] : $file;
+        return str_replace(DEBUG_ROOT, '', $file);
+    }
+
+    private static function _prepare($value)
+    {
+        if (is_array($value)) {
+            $r = [];
+            foreach ($value as $k => $v) {
+                $r[$k] = self::_prepare($v);
+            }
+            return $r;
+        } elseif (is_string($value)) {
+            if ($value === '') {
+                return '""';
+            } else {
+                return htmlspecialchars($value);
+            }
+        } else {
+            return $value;
+        }
     }
 
     /**
      * Dumps the passed object or variable on console or browser
      *
-     * @param mixed $var
+     * @param mixed $v
      * @param bool  $trace (should print the trace?)
      */
-    static function dump($var, $trace = true)
+    static function dump($v, $trace = true)
     {
-        $d = Debug::getInstance();
-
-        if ($d->level < 1) {
+        if (self::$level < 1) {
             return;
         }
 
-        if ($d->terminal) {
-            $c = $d->console;
+        $v = self::_prepare($v);
 
-            if (!is_array($var)) {
-                $c->writeln(print_r($var, 1), 'blue');
+        if (self::$terminal) {
+            $c = self::$console;
+
+            if (!is_array($v) && !is_object($v) && !is_string($v)) {
+                $v = json_encode(
+                    $v,
+                    JSON_UNESCAPED_SLASHES | 
+                    JSON_UNESCAPED_UNICODE
+                );
+
+                $c->writeln(print_r($v, 1), 'red');
             } else {
-                $lines = explode("\n", print_r($var, 1));
+                $lines = explode("\n", print_r($v, 1));
                 foreach ($lines as $line) {
                     preg_match_all('|(.*)\[(.*)\] \=\>(.*)|', $line, $m);
                     
                     if (!isset($m[0][0])) {
-                        $c->writeln($line);
+                        if ($line === '""') {
+                            $c->writeln($line, 'red');
+                        } else {
+                            $c->writeln($line);
+                        }
                     } else {
                         $c->write($m[1][0] . '[', 'blue');
                         $c->write($m[2][0], 'light_red');
@@ -176,12 +245,29 @@ class Debug
             }
 
         } else {
-            $txt = preg_replace('/\[(.*)\]/u', '[<span style="color:#d00">$1</span>]', print_r($var, 1));
-            echo '<pre style="color:blue">' . $txt . "</pre>";
+            if (is_array($v) || is_object($v)) {
+                $v = preg_replace(
+                    '|\[(.*)\]|Us', 
+                    '[<span style="color:#d00">$1</span>]', 
+                    print_r($v, 1)
+                );
+            } elseif (is_string($v)) {
+                if ($v === "") {
+                    $v = '""';
+                }
+            } else {
+                $v = '<span style="color:#d00">' . json_encode(
+                    $v,
+                    JSON_UNESCAPED_SLASHES | 
+                    JSON_UNESCAPED_UNICODE
+                ) . '</span>';
+            }
+
+            echo '<pre><code style="color:#36c">' . $v . '</code></pre>';
         }
 
         if ($trace)
-            $d->_trace();
+            self::_trace();
     }
 
     /**
@@ -191,27 +277,36 @@ class Debug
      *
      * @return string
      */
-    private function _trace($trace = null)
+    private static function _trace($trace = null)
     {
         $trace = $trace ?: debug_backtrace();
-        foreach( $trace as $er) {
-            $func = isset($er['function'])? $er['function']: '';
-            $file = isset($er['file']) ? $er['file'] : '';
+        foreach( $trace as $t) {
+            if (
+                !isset($t['file']) ||
+                strpos($t['file'], 'src/Debug.php') !== false
+            ) {
+                continue;
+            }
+
+            // $t['file'] = self::limitPath($t['file']);
+            $func = isset($t['function'])? $t['function']: '';
+            $file = isset($t['file']) ? $t['file'] : '';
 
             # last two sections of the path
             if ($file) {
-                $file  = $this->limitPath($file);
-                $line  = isset($er['line'])? $er['line']: '';
-                $class = isset($er['class'])? $er['class']: '';
+                $file  = self::limitPath($file);
+                $line  = isset($t['line'])? $t['line']: '';
+                $class = isset($t['class'])? $t['class']: '';
                 if ($class == 'IrfanTOOR\Debug' && $func=='_trace')
                     continue;
 
                 $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
-                $txt = '-- file: ' . $file . ', line: ' . $line . ', ' . $ftag;
-                if ($this->terminal)
-                    $this->console->writeln( $txt, 'dark');
-                else
+                $txt = 'line: ' . $line . ', file: ' . $file . ', ' . $ftag;
+                if (self::$terminal) {
+                    self::$console->writeln( $txt, 'dark');
+                } else {
                     echo '<code style="color:#999">' . $txt . '</code><br>';
+                }
             }
         }
     }
@@ -220,17 +315,19 @@ class Debug
      * Exception handler to intercept any exceptions
      * Note: its not called dreclty but is used by Debug class
      */
-    function exceptionHandler($e) {
-        ob_get_clean();
-        $this->exception_handler_called = true;
-
-        if (!$this->level)
+    static function exceptionHandler($e) {
+        if (!self::$level)
             return;
+
+        self::$exception_handler_called = true;
+
+        if (self::$level < 2)
+            ob_get_clean();
 
         if (is_object($e)) {
             $class   = 'Exception';
             $message = $e->getMessage();
-            $file    = $this->limitPath($e->getFile());
+            $file    = self::limitPath($e->getFile());
             $line    = $e->getLine();
             $type    = '';
             $trace   = $e->getTrace();
@@ -240,51 +337,53 @@ class Debug
             $type .= ' - ';
         }
 
-        if ($this->terminal) {
-            $c = $this->console;
+        if (self::$terminal) {
+            $c = self::$console;
 
             $c->writeln(' ', 'bg_light_red');
             $c->write(' ', 'bg_light_red');
             $c->writeln(' ' . $class . ': ' . $type . $message);
             $c->writeln(' ', 'bg_light_red');
 
-            $c->writeln('file ' . $file . ', line: ' . $line , 'dark');
+            $c->writeln('line: ' . $line . ', file: ' . $file , 'blue');
+
+            if (self::$level > 1) {
+                self::_trace();
+            }
         } else {
             $body =
             '<div style="border-left:4px solid #d00; padding:6px;">' .
-                '<div style="color:#d00">' . $class . ': ' . $type . $message . '</div><code style="color:#36c">file: ' .
-                $file . ', line: ' . $line .
-                '</code></div>';
+                '<code style="color:#d00">' . $class . ': ' . $type . $message . '</code><br>' .
+                '<code style="color:#36c"> line: ' . $line . ', file: ' . $file . '</code>' .
+            '</div>';
 
-            echo $body;
+            ob_start();
+                echo $body;
+
+                if (self::$level > 1) {
+                    self::_trace(debug_backtrace()[0]['args'][0]->getTrace());
+                }
+
+            $contents = ob_get_clean();
+            echo $contents;
+            exit;
         }
-        $this->_trace($trace);
+    }
+}
+
+}
+
+namespace {
+    use IrfanTOOR\Debug;
+
+    function d($v)
+    {
+        Debug::dump($v);
     }
 
-    /**
-     * Called at the end of execution to dump the timing or other details
-     * Note: This function is not called directly, but is registered by the
-     *       Debug class
-     */
-    function shutdown()
+    function dd($v)
     {
-        if ($this->exception_handler_called) {
-            return;
-        }
-
-        if (ob_get_level() > 0)
-            ob_get_flush();
-
-        if ($this->level) {
-            echo ($this->terminal ? PHP_EOL : '<br>');
-            $t  = microtime(true) - $_SERVER['REQUEST_TIME_FLOAT'];
-            $te = sprintf(' %.2f mili sec.', $t * 1000);
-            self::dump('Elapsed time: ' . $te, 0);
-        }
-
-        if ($this->level > 1) {
-            $files = get_included_files();
-            self::dump($files, 0);
-        }
+        Debug::dump($v);
+        exit;
     }
 }
