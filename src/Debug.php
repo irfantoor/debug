@@ -4,7 +4,6 @@ namespace IrfanTOOR {
 
 use Exception;
 use IrfanTOOR\Console;
-use IrfanTOOR\Debug\Constants;
 
 /**
  * Debug, dump and trace while development
@@ -13,7 +12,7 @@ class Debug
 {
     const NAME        = "Irfan's Debug";
     const DESCRIPTION = "Debug, dump and trace while development";
-    const VERSION     = "0.4.1";
+    const VERSION     = "0.4.2";
 
     /**
      * Contains a pointer to the only instance of this class
