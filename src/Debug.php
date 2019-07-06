@@ -12,7 +12,7 @@ class Debug
 {
     const NAME        = "Irfan's Debug";
     const DESCRIPTION = "Debug, dump and trace while development";
-    const VERSION     = "0.4.2";
+    const VERSION     = "0.5";
 
     /**
      * Contains a pointer to the only instance of this class
@@ -119,7 +119,7 @@ class Debug
      *
      * @param int $level
      */
-    static function enable(Int $level = 0)
+    static function enable(Int $level = 1)
     {
         if (self::$locked) {
             return;
