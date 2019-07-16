@@ -12,7 +12,7 @@ class Debug
 {
     const NAME        = "Irfan's Debug";
     const DESCRIPTION = "Debug, dump and trace while development";
-    const VERSION     = "0.5";
+    const VERSION     = "0.5.1";
 
     /**
      * Contains a pointer to the only instance of this class
@@ -119,7 +119,7 @@ class Debug
      *
      * @param int $level
      */
-    static function enable(Int $level = 1)
+    static function enable($level = 1)
     {
         if (self::$locked) {
             return;
@@ -127,7 +127,7 @@ class Debug
 
         self::getInstance();
 
-        self::$level = $level;
+        self::$level = (int) $level;
 
         # init
         if (PHP_SAPI === 'cli') {
