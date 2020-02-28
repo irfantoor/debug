@@ -12,7 +12,7 @@ class Debug
 {
     const NAME        = "Irfan's Debug";
     const DESCRIPTION = "Debug, dump and trace while development";
-    const VERSION     = "0.5.1";
+    const VERSION     = "0.5.2";
 
     /**
      * Contains a pointer to the only instance of this class
@@ -61,7 +61,7 @@ class Debug
      *
      * @param int $level
      */
-    public function __construct()
+    function __construct()
     {
         if (self::$instance)
             throw new Exception("Use Debug::getInstance, cannot create a new instance", 1);
@@ -77,26 +77,10 @@ class Debug
                 return;
             }
 
-            // if (ob_get_level() > 1)
-            //     ob_get_flush();
-
-            if (self::$level) {
-                self::dump(
-                    sprintf(
-                        "time elapsed: %04.2f mili sec.", 
-                        (microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']) * 1000
-                    ), 
-                    false
-                );
-            }
-            
-            if (self::$level > 2) {
-                $files = [];
-                $i = 1;
-                foreach (get_included_files() as $file) {
-                    $files[$i++] = self::limitPath($file);
-                }
-                self::dump($files, false);
+            $e = error_get_last();
+            if ($e) {
+                self::exceptionHandler($e);
+                exit;
             }
         });
 
@@ -164,6 +148,9 @@ class Debug
         self::$locked = true;
     }
 
+    /**
+     * returns the debug level
+     */
     static function getLevel()
     {
         return self::$level;
@@ -279,33 +266,23 @@ class Debug
     private static function _trace($trace = null)
     {
         $trace = $trace ?: debug_backtrace();
-        foreach( $trace as $t) {
-            if (
-                !isset($t['file']) ||
-                strpos($t['file'], 'src/Debug.php') !== false
-            ) {
-                continue;
-            }
 
-            // $t['file'] = self::limitPath($t['file']);
-            $func = isset($t['function'])? $t['function']: '';
-            $file = isset($t['file']) ? $t['file'] : '';
+        foreach( $trace as $t) {
+            $func = $t['function'] ?? '';
+            $file = $t['file'] ?? null;
+
+            if (!$file || strpos($file, 'src/Debug.php') !== false) continue;
 
             # last two sections of the path
-            if ($file) {
-                $file  = self::limitPath($file);
-                $line  = isset($t['line'])? $t['line']: '';
-                $class = isset($t['class'])? $t['class']: '';
-                if ($class == 'IrfanTOOR\Debug' && $func=='_trace')
-                    continue;
-
-                $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
-                $txt = 'line: ' . $line . ', file: ' . $file . ', ' . $ftag;
-                if (self::$terminal) {
-                    self::$console->writeln( $txt, 'dark');
-                } else {
-                    echo '<code style="color:#999">' . $txt . '</code><br>';
-                }
+            $file  = self::limitPath($file);
+            $line  = $t['line'] ?? '';
+            $class = $t['class'] ?? '';
+            $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
+            $txt = 'line: ' . $line . ', file: ' . $file . ', ' . $ftag;
+            if (self::$terminal) {
+                self::$console->writeln($txt, 'dark');
+            } else {
+                echo '<code style="color:#999">' . $txt . '</code><br>';
             }
         }
     }
