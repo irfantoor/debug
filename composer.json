@@ -14,10 +14,8 @@
         "irfantoor/console": "^0.6.0"
     },
     "autoload": {
-        "classmap": [
-            "src/"
-        ]
-    },
-    "require-dev": {
+        "psr-4": {
+            "IrfanTOOR\\": "src/"
+        }
     }
 }

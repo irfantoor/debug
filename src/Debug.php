@@ -10,9 +10,20 @@ use IrfanTOOR\Console;
  */
 class Debug
 {
-    const NAME        = "Irfan's Debug";
+    /**
+     * @var const
+     */
+    const NAME = "Irfan's Debug";
+
+    /**
+     * @var const
+     */
     const DESCRIPTION = "Debug, dump and trace while development";
-    const VERSION     = "0.5.2";
+
+    /**
+     * @var const
+     */
+    const VERSION = "0.5.3"; // @@VERSION
 
     /**
      * Contains a pointer to the only instance of this class
