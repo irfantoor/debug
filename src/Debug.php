@@ -1,376 +1,266 @@
 <?php
 
-namespace IrfanTOOR {
-
-use Exception;
-use IrfanTOOR\Console;
-
 /**
- * Debug, dump and trace while development
+ * IrfanTOOR\Debug
+ * php version 7.3
+ *
+ * @author    Irfan TOOR <email@irfantoor.com>
+ * @copyright 2021 Irfan TOOR
  */
-class Debug
+
+namespace IrfanTOOR
 {
-    /**
-     * @var const
-     */
-    const NAME = "Irfan's Debug";
+    use IrfanTOOR\Terminal;
+    use Exception;
 
-    /**
-     * @var const
-     */
-    const DESCRIPTION = "Debug, dump and trace while development";
-
-    /**
-     * @var const
-     */
-    const VERSION = "0.5.3"; // @@VERSION
-
-    /**
-     * Contains a pointer to the only instance of this class
-     *
-     * @var object
-     */
-    protected static $instance = null;
-
-    /**
-     * Used to lock the Debug class against modification of level
-     *
-     * @var bool
-     */
-    protected static $locked = false;
-
-    /**
-     * debug level : 0,1,2,3 ...
-     *
-     * @var int
-     */
-    protected static $level    = 0;
-
-    /**
-     * If we are on a terminal (and not a web app)
-     *
-     * @var bool
-     */
-    protected static $terminal = false;
-
-    /**
-     * IrfanTOOR\Console
-     *
-     * @var bool
-     */
-    protected static $console;
-
-    /**
-     * indicates if exceptionHandler was called
-     *
-     * @var bool
-     */
-    protected static $exception_handler_called = false;
-
-    /**
-     * Constructs the Debug instance
-     *
-     * @param int $level
-     */
-    function __construct()
+    # Debug class helps debugging, while developement
+    class Debug
     {
-        if (self::$instance)
-            throw new Exception("Use Debug::getInstance, cannot create a new instance", 1);
+        const NAME        = "Debug";
+        const DESCRIPTION = "Debug your development of PHP";
+        const VERSION     = "0.6";
 
-        if (($pos = strpos(__DIR__, 'vendor')) === false) {
-            $pos = strpos(__DIR__, 'src');
-        }
+        /** @var self */
+        protected static $instance = null;        
 
-        define('DEBUG_ROOT', substr(__DIR__, 0, $pos));
+        /** @var Terminal -- it can write both to a Cli or Html client*/
+        protected static $terminal;
 
-        register_shutdown_function(function() {
-            if (self::$exception_handler_called) {
-                return;
-            }
+        /** @var int Debug level which could be  0, 1, 2, 3 */
+        protected static $level;
 
-            $e = error_get_last();
-            if ($e) {
-                self::exceptionHandler($e);
-                exit;
-            }
-        });
+        /** @var bool -- wether the level has been locked */
+        protected static $locked = false;
 
-        set_exception_handler(function($obj){
-            self::exceptionHandler($obj);
-            exit;
-        });
-
-        # init instance
-        self::$instance = $this;
-    }
-
-    static function getInstance()
-    {
-        return self::$instance ?: new self();
-    }
-
-    /**
-     * Static (and simple) way to enable Debug mode with a level
-     *
-     * @param int $level
-     */
-    static function enable($level = 1)
-    {
-        if (self::$locked) {
-            return;
-        }
-
-        self::getInstance();
-
-        self::$level = (int) $level;
-
-        # init
-        if (PHP_SAPI === 'cli') {
-            self::$terminal = true;
-            self::$console  = new Console;
-        }
-
-        # adjust error reporting
-        switch ($level)
+        /**
+         * Debug constructor
+         *
+         * @param int $level
+         */
+        function __construct(int $level = 1)
         {
-            case 0:
-                error_reporting(0);
-                break;
+            if (self::$instance)
+                return self::$instance;
 
-            case 1:
-                if (ob_get_level() === 0)
-                    ob_start();
-                break;
+            self::$instance = $this;
 
-            case 2:
-                error_reporting(E_ALL && ~E_NOTICE);
-                break;
+            if (($pos = strpos(__DIR__, 'vendor')) === false)
+                $pos = strpos(__DIR__, 'src');
 
-            default:
-                error_reporting(E_ALL);
-        }
-    }
+            define('DEBUG_ROOT', substr(__DIR__, 0, $pos));
 
-    /**
-     * Debug level can not be changed when once locked
-     */
-    static function lock()
-    {
-        self::$locked = true;
-    }
-
-    /**
-     * returns the debug level
-     */
-    static function getLevel()
-    {
-        return self::$level;
-    }
-
-    /**
-     * limit the path for security reasons
-     *
-     * @param string $file
-     */
-    static function limitPath($file)
-    {
-        return str_replace(DEBUG_ROOT, '', $file);
-    }
-
-    private static function _prepare($value)
-    {
-        if (is_array($value)) {
-            $r = [];
-            foreach ($value as $k => $v) {
-                $r[$k] = self::_prepare($v);
-            }
-            return $r;
-        } elseif (is_string($value)) {
-            if ($value === '') {
-                return '""';
-            } else {
-                return htmlspecialchars($value);
-            }
-        } else {
-            return $value;
-        }
-    }
-
-    /**
-     * Dumps the passed object or variable on console or browser
-     *
-     * @param mixed $v
-     * @param bool  $trace (should print the trace?)
-     */
-    static function dump($v, $trace = true)
-    {
-        if (self::$level < 1) {
-            return;
+            self::$terminal = new Terminal();
+            self::enable($level);
         }
 
-        $v = self::_prepare($v);
+        /**
+         * Returns the instance
+         *
+         * @return self
+         */
+        static function getInstance()
+        {
+            return self::$instance ?: new self();
+        }
 
-        if (self::$terminal) {
-            $c = self::$console;
+        /**
+         * Returns the output resource
+         *
+         * @returns Terminal
+         */
+        public static function getOutput()
+        {
+            return self::$terminal;
+        }
 
-            if (!is_array($v) && !is_object($v) && !is_string($v)) {
-                $v = json_encode(
-                    $v,
-                    JSON_UNESCAPED_SLASHES | 
-                    JSON_UNESCAPED_UNICODE
-                );
+        /**
+         * Enables Debugging
+         *
+         * @param int $level Debug level 0 to 3, default is 1
+         */
+        public static function enable(int $level = 1)
+        {
+            if (self::$locked)
+                return;
 
-                $c->writeln(print_r($v, 1), 'red');
-            } else {
-                $lines = explode("\n", print_r($v, 1));
-                foreach ($lines as $line) {
-                    preg_match_all('|(.*)\[(.*)\] \=\>(.*)|', $line, $m);
-                    
-                    if (!isset($m[0][0])) {
-                        if ($line === '""') {
-                            $c->writeln($line, 'red');
-                        } else {
-                            $c->writeln($line);
-                        }
-                    } else {
-                        $c->write($m[1][0] . '[', 'blue');
-                        $c->write($m[2][0], 'light_red');
-                        $c->write('] =>', 'blue');
-                        $c->writeln($m[3][0], 'blue');
+            self::getInstance();
+            self::$level = $level;
+            
+            # errors will be reported by the Debug
+            error_reporting(0);
+
+            if (self::$level) {
+                # exception handler
+                set_exception_handler(function ($e) {
+                    self::$terminal->write("| ", "light_red, bold");
+                    self::$terminal->writeln(" Error: " . $e->getMessage() . " ", "light_red");
+
+                    if (self::$level > 1) {
+                        self::$terminal->writeln(
+                            "line: " . ($e->getLine() ?? '') .
+                            ", file: " . ($e->getFile() ?? ''),
+                            "info"
+                        );
                     }
-                }
-            }
 
-        } else {
-            if (is_array($v) || is_object($v)) {
-                $v = preg_replace(
-                    '|\[(.*)\]|Us', 
-                    '[<span style="color:#d00">$1</span>]', 
-                    print_r($v, 1)
-                );
-            } elseif (is_string($v)) {
-                if ($v === "") {
-                    $v = '""';
-                }
-            } else {
-                $v = '<span style="color:#d00">' . json_encode(
-                    $v,
-                    JSON_UNESCAPED_SLASHES | 
-                    JSON_UNESCAPED_UNICODE
-                ) . '</span>';
-            }
+                    if (self::$level > 2) {
+                        self::trace($e->getTrace());
+                    }
+                });
 
-            echo '<pre><code style="color:#36c">' . $v . '</code></pre>';
-        }
+                # verify that the
+                register_shutdown_function(function () {
+                    if (!Debug::getLevel())
+                        return;
 
-        if ($trace)
-            self::_trace();
-    }
+                    $e = error_get_last();
+                    if (!$e)
+                        return;
 
-    /**
-     * Prints the debug trace in the printable format
-     *
-     * @param null|array $trace
-     *
-     * @return string
-     */
-    private static function _trace($trace = null)
-    {
-        $trace = $trace ?: debug_backtrace();
+                    self::$terminal->writeln();
+                    self::$terminal->write("| ", "light_red, bold");
+                    self::$terminal->writeln("Error (" . $e['type']  . "): " . $e['message'] . " ", "light_red");
 
-        foreach( $trace as $t) {
-            $func = $t['function'] ?? '';
-            $file = $t['file'] ?? null;
-
-            if (!$file || strpos($file, 'src/Debug.php') !== false) continue;
-
-            # last two sections of the path
-            $file  = self::limitPath($file);
-            $line  = $t['line'] ?? '';
-            $class = $t['class'] ?? '';
-            $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
-            $txt = 'line: ' . $line . ', file: ' . $file . ', ' . $ftag;
-            if (self::$terminal) {
-                self::$console->writeln($txt, 'dark');
-            } else {
-                echo '<code style="color:#999">' . $txt . '</code><br>';
+                    if (self::$level > 1) {
+                        self::$terminal->write("| ", "light_red, bold");
+                        self::$terminal->writeln(
+                            "line: " . $e['line'] .
+                            ", file: " . $e['file'],
+                            "info"
+                        );
+                    }
+                });
             }
         }
-    }
 
-    /**
-     * Exception handler to intercept any exceptions
-     * Note: its not called dreclty but is used by Debug class
-     */
-    static function exceptionHandler($e) {
-        if (!self::$level)
-            return;
-
-        self::$exception_handler_called = true;
-
-        if (self::$level < 2)
-            ob_get_clean();
-
-        if (is_object($e)) {
-            $class   = 'Exception';
-            $message = $e->getMessage();
-            $file    = self::limitPath($e->getFile());
-            $line    = $e->getLine();
-            $type    = '';
-            $trace   = $e->getTrace();
-        } else {
-            $class = 'Error';
-            extract($e);
-            $type .= ' - ';
+        /**
+         * Locks the debug level, so that it can not be modified later
+         */
+        public static function lock()
+        {
+            self::$locked = true;
         }
 
-        if (self::$terminal) {
-            $c = self::$console;
+        /**
+         * Returns the debug level
+         *
+         * @return int
+         */
+        public static function getLevel(): int
+        {
+            return self::$level;
+        }
 
-            $c->writeln(' ', 'bg_light_red');
-            $c->write(' ', 'bg_light_red');
-            $c->writeln(' ' . $class . ': ' . $type . $message);
-            $c->writeln(' ', 'bg_light_red');
+        /**
+         * limit the path for security/effitiancy reasons
+         *
+         * @param string $file
+         */
+        static function limitPath($file)
+        {
+            return str_replace(DEBUG_ROOT, '', $file);
+        }
 
-            $c->writeln('line: ' . $line . ', file: ' . $file , 'blue');
+        /**
+         * Prepare the $var to be printed
+         *
+         * @param mixed $var Variable to be printed
+         */
+        protected static function prepare($var)
+        {
+            if (is_array($var)) {
+                foreach ($var as $k => $v)
+                    $var[$k] = self::prepare($v);
 
-            if (self::$level > 1) {
-                self::_trace();
+                return $var;
             }
-        } else {
-            $body =
-            '<div style="border-left:4px solid #d00; padding:6px;">' .
-                '<code style="color:#d00">' . $class . ': ' . $type . $message . '</code><br>' .
-                '<code style="color:#36c"> line: ' . $line . ', file: ' . $file . '</code>' .
-            '</div>';
 
-            ob_start();
-                echo $body;
+            if (is_object($var))
+                return $var;
+            else
+                return json_encode($var);
+        }
 
-                if (self::$level > 1) {
-                    self::_trace(debug_backtrace()[0]['args'][0]->getTrace());
-                }
+        /**
+         * Dumps the passed variable in a readable manner
+         *
+         * @param mixed $var        The variable to be dumped
+         * @param bool  $show_trace Dumps the trace if true
+         */
+        public static function dump($var, bool $show_trace = true)
+        {
+            if (self::$level < 1)
+                return;
 
-            $contents = ob_get_clean();
-            echo $contents;
-            exit;
+            $var = self::prepare($var);
+            $text = print_r($var, true);
+
+            # hack to convert the color of text inside square brackets [] to red
+            if ((PHP_SAPI === 'cli'))
+                $text = preg_replace('|\[(.*)\]|U', '['."\033[31m".'$1' . "\033[36m" . ']', $text);
+            else
+                $text = preg_replace('|\[(.*)\]|U', '[<span style="color:#d00">$1</span>]', $text);
+
+            self::$terminal->writeln($text, "info");
+
+            if ($show_trace)
+                self::trace();
+        }
+
+        /**
+         * Dumps the backtrace
+         */
+        protected static function trace()
+        {
+            $trace = debug_backtrace();
+            $color = "info";
+
+            foreach ($trace as $t) {
+                if (!isset($t['file']))
+                    continue;
+                
+                if (strpos($t['file'], 'src/Debug.php') !== false)
+                    continue;
+
+                $file  = self::limitPath($t['file']);
+                $line  = $t['line'] ?? '';
+                $class = $t['class'] ?? '';
+                $func = $t['function'] ?? '';
+                $ftag = ($class != '') ? $class . '=>' . $func . '()' : $func . '()';
+                $text = 'line: ' . $line . ', file: ' . $file;
+
+                self::$terminal->write($text, $color);
+                self::$terminal->writeln(' -- ' . $ftag, 'dark');
+                $color = "light_gray";
+            }
         }
     }
 }
 
-}
-
-namespace {
+namespace
+{
     use IrfanTOOR\Debug;
 
-    function d($v)
+    /**
+     * Dumps the passed variable
+     *
+     * @param mixed $var        The variable to be dumped
+     * @param bool  $show_trace Dumps the trace if true
+     */
+    function d($var, bool $show_trace = true)
     {
-        Debug::dump($v);
+        Debug::dump($var, $show_trace);
     }
 
-    function dd($v)
+    /**
+     * Dumps the passed variable and dies
+     *
+     * @param mixed $var        The variable to be dumped
+     * @param bool  $show_trace Dumps the trace if true
+     */
+    function dd($var, bool $show_trace = true)
     {
-        Debug::dump($v);
+        Debug::dump($var, $show_trace);
         exit;
     }
 }

@@ -5,10 +5,10 @@
 Install the latest version with
 
 ```sh
-composer require irfantoor/debug
+$ composer require irfantoor/debug
 ```
 
-Requires PHP 7.0 or newer.
+Requires PHP 7.3 or newer.
 
 ## Usage
 
@@ -19,12 +19,11 @@ can enable the debugging as:
 ```php
 <?php
 require "path/to/vendor/autoload.php";
+
 use IrfanTOOR\Debug;
 Debug::enable(2); # 2 is debug level
 
-...
 # You can use it to dump data etc.
-
 Debug::dump($_SERVER);
 Debug::dump($request);
 Debug::dump($response->getHeaders());
@@ -33,3 +32,10 @@ Debug::dump($response->getHeaders());
 Try including and enabling it in the starting index.php or bootstrap.php file so
 that it can detect any errors in the succeeding files.
 
+Utility functions are added automatically, when Debug::enable is used, these
+functions help dump or dump_and_die easy
+
+```php
+    d('Hello World!'); # dump
+    dd($_SERVER);      # dump and die!
+```

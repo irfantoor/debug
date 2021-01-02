@@ -1,112 +1,99 @@
 <?php
 
-use IrfanTOOR\Debug;
 use IrfanTOOR\Test;
-
-function getDump($v, $t = false)
-{
-    ob_start();
-    Debug::dump($v, $t);
-    $colored_dump = ob_get_clean();
-
-    # clean the coloring codes
-    $dump = preg_replace('|\\033\[\d+m|us', '', $colored_dump);
-    return mb_substr($dump, 0, strlen($dump) -1); # strip the last \n
-}
+use IrfanTOOR\Debug;
 
 class DebugTest extends Test
 {
-    protected $debug;
-
-    function setup()
+    # Debug::class exists
+    function testInstance()
     {
-        $l = $this->options['vverbose']['value'];
-        Debug::enable(1);
+        # function d & dd does not exist in global space
+        # if you are using -v or -vv these tests will fail, as Debug has already
+        # been loaded, so its normal
+        $this->assertFalse(function_exists('d'));
+        $this->assertFalse(function_exists('dd'));
+
+        $d = new Debug();
+        $this->assertInstanceOf(Debug::class, $d);
     }
 
-    function testDebugInstance()
+    # functions d($v) and dd($vv) are defined in global namespace
+    function testFunctions_D_and_DD()
     {
-        $this->assertInstanceOf(IrfanTOOR\Debug::class, Debug::getInstance());
+        Debug::enable();
+
+        $this->assertTrue(function_exists('d'));
+        $this->assertTrue(function_exists('dd'));
+
+        $t = Debug::getOutput();
+        $t->ob_start();
+        Debug::dump($this);
+        $t->ob_start();
+
+        // $this->assertEquals(2, $t->ob_level());
+        $o1 = ob_get_clean();
+        // $this->assertEquals(1, $t->ob_level());
+        $o2 = ob_get_clean();
+        // $this->assertEquals(0, $t->ob_level());
+        $this->assertEquals($o1, $o2);
+        // print_r($t); exit;
     }
 
-    function testUniqueInstance()
+    # Debug can catch the exceptions
+    function testCatchesException()
     {
-        $d1 = Debug::getInstance();
-        $d2 = Debug::getInstance();
-
-        $this->assertEquals($d1, $d2);
-        $this->assertSame($d1, $d2);
+        $this->assertException(function () {
+            throw new \Exception("Error Processing Request", 1);
+        });
     }
 
-    function testCantCreateNewInstances()
+    # Debug can catch the errors
+    function testCatchesError()
     {
-        $this->assertException(
-            function(){
-                new Debug(1);
-            },
-            Exception::class,
-            "Use Debug::getInstance, cannot create a new instance"
-        );
+        $this->assertError(function () {
+            require "classes/DebugError.php";
+        });
     }
 
-    function testConstants()
+    # Debug can return the output device
+    function testGetOutput()
     {
-        $this->assertEquals("Irfan's Debug", Debug::NAME);
-        $this->assertEquals("Debug, dump and trace while development", Debug::DESCRIPTION);
-
-        $version = Debug::VERSION;
-        $this->assertString($version);
-        $this->assertFalse(strpos($version, 'VERSION'));
-        $this->assertInt(strpos($version, '.'));
+        $output = Debug::getOutput();
+        $this->assertNotNull($output);
+        $this->assertMethod($output, "write");
+        $this->assertMethod($output, "writeln");
     }
 
-    function testDefaultLevel()
+    # Debug can dump
+    function testDump()
     {
-        $l = $this->options['vverbose']['value'];
-        Debug::enable($l);
-        $level = Debug::getLevel();
-        $this->assertInt($level);
-        $this->assertEquals($l, $level);
+        $this->assertMethod(new Debug(), 'dump');
+
+        $t = Debug::getOutput();
+        $t->ob_start();
+        Debug::dump("Hello World!", false); $l = __LINE__;
+        $output = $t->ob_get_clean();
+
+        $this->assertTrue(strpos($output, "Hello World!") !== false);
+        $this->assertFalse(strpos($output, "file: "));
+        $this->assertFalse(strpos($output, "line: "));
     }
 
-    function testLevelCanChange()
+    # Debug can give the trace of dumps
+    function testTrace()
     {
-        $l1 = Debug::getLevel();
-        $this->assertInt($l1);
-        $this->assertEquals($l1, Debug::getLevel());
+        $this->assertMethod(new Debug(), 'trace');
 
-        $l2 = $l1 + 1;
-        Debug::enable($l2);
-        $this->assertEquals($l2, Debug::getLevel());
+        $t = Debug::getOutput();
+        $t->ob_start();
+        Debug::dump("Hello World!"); $l = __LINE__;
+        $output = $t->ob_get_clean();
 
-        Debug::enable($l1);
+        $this->assertTrue(strpos($output, "Hello World!") !== false);
+        $this->assertNotFalse(strpos($output, "file: " . "tests/DebugTest.php"));
+        $this->assertNotFalse(strpos($output, "line: " . $l));
     }
 
-    function testTerminalDump()
-    {
-        Debug::enable(0);
-        $this->assertEquals("", getDump($_SERVER));
-
-        Debug::enable(1);
-        $dump = getDump($_SERVER);
-        $this->assertString($dump);
-        
-        $this->assertEquals('""', getDump(''));
-        $this->assertEquals('null', getDump(null));
-        $this->assertEquals('true', getDump(true));
-        $this->assertEquals('false', getDump(false));
-        $this->assertEquals('0', getDump(0));
-        $this->assertEquals('hello', getDump('hello'));
-    }
-
-    # This should be the final test as afterwards the level is locked
-    function testLocked()
-    {
-        $l1 = $this->options['vverbose']['value'];
-        Debug::enable($l1);
-        Debug::lock();
-        $l2 = $l1 + 1;
-        Debug::enable($l2);
-        $this->assertEquals($l1, Debug::getLevel());
-    }    
+    # todo -- convert files from examples to tests ...
 }
