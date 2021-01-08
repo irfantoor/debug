@@ -2,6 +2,7 @@
     "name": "irfantoor/debug",
     "description": "Debug, dump and trace while development",
     "type": "library",
+    "keywords": ["debug", "dump", "trace", "d", "dd"],
     "license": "MIT",
     "authors": [
         {
@@ -15,7 +16,11 @@
     },
     "autoload": {
         "psr-4": {
-            "IrfanTOOR\\": "src/"
+            "IrfanTOOR\\": "src/",
+            "Tests\\": "tests/classes/"
         }
+    },
+    "require-dev": {
+        "irfantoor/mini-loader": "~0.1"
     }
 }

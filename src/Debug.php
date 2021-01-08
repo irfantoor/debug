@@ -18,7 +18,7 @@ namespace IrfanTOOR
     {
         const NAME        = "Debug";
         const DESCRIPTION = "Debug your development of PHP";
-        const VERSION     = "0.6";
+        const VERSION     = "0.6.1";
 
         /** @var self */
         protected static $instance = null;        

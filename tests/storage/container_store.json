@@ -1,0 +1,12 @@
+{
+    "data": {
+        "StdClass": {},
+        "hello": "world!",
+        "hash": {},
+        "IrfanTOOR\\Container\\Tests\\MyTestInterface": "IrfanTOOR\\Container\\Tests\\Factory\\MyTestFactory"
+    },
+    "factories": {
+        "hash": true,
+        "IrfanTOOR\\Container\\Tests\\MyTestInterface": true
+    }
+}
