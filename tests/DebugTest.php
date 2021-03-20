@@ -86,6 +86,7 @@ class DebugTest extends Test
         $this->assertMethod(new Debug(), 'trace');
 
         $t = Debug::getOutput();
+        Debug::enable(2);
         $t->ob_start();
         Debug::dump("Hello World!"); $l = __LINE__;
         $output = $t->ob_get_clean();
@@ -96,4 +97,5 @@ class DebugTest extends Test
     }
 
     # todo -- convert files from examples to tests ...
+    
 }

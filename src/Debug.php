@@ -18,16 +18,16 @@ namespace IrfanTOOR
     {
         const NAME        = "Debug";
         const DESCRIPTION = "Debug your development of PHP";
-        const VERSION     = "0.6.1";
+        const VERSION     = "0.6.2";
 
         /** @var self */
-        protected static $instance = null;        
+        protected static $instance = null;
 
         /** @var Terminal -- it can write both to a Cli or Html client*/
         protected static $terminal;
 
-        /** @var int Debug level which could be  0, 1, 2, 3 */
-        protected static $level;
+        /** @var int Debug level which could be  0, 1, 2, 3, 4 */
+        protected static $level = 0;
 
         /** @var bool -- wether the level has been locked */
         protected static $locked = false;
@@ -37,7 +37,7 @@ namespace IrfanTOOR
          *
          * @param int $level
          */
-        function __construct(int $level = 1)
+        function __construct()
         {
             if (self::$instance)
                 return self::$instance;
@@ -50,7 +50,10 @@ namespace IrfanTOOR
             define('DEBUG_ROOT', substr(__DIR__, 0, $pos));
 
             self::$terminal = new Terminal();
-            self::enable($level);
+
+            set_exception_handler([Debug::class, "exceptionHandler"]);
+            set_error_handler([Debug::class, "errorHandler"]);
+            register_shutdown_function([Debug::class, "shutdown"]);
         }
 
         /**
@@ -76,7 +79,7 @@ namespace IrfanTOOR
         /**
          * Enables Debugging
          *
-         * @param int $level Debug level 0 to 3, default is 1
+         * @param int $level Debug level 0 to 4, default is 1
          */
         public static function enable(int $level = 1)
         {
@@ -85,52 +88,9 @@ namespace IrfanTOOR
 
             self::getInstance();
             self::$level = $level;
-            
-            # errors will be reported by the Debug
-            error_reporting(0);
 
-            if (self::$level) {
-                # exception handler
-                set_exception_handler(function ($e) {
-                    self::$terminal->write("| ", "light_red, bold");
-                    self::$terminal->writeln(" Error: " . $e->getMessage() . " ", "light_red");
-
-                    if (self::$level > 1) {
-                        self::$terminal->writeln(
-                            "line: " . ($e->getLine() ?? '') .
-                            ", file: " . ($e->getFile() ?? ''),
-                            "info"
-                        );
-                    }
-
-                    if (self::$level > 2) {
-                        self::trace($e->getTrace());
-                    }
-                });
-
-                # verify that the
-                register_shutdown_function(function () {
-                    if (!Debug::getLevel())
-                        return;
-
-                    $e = error_get_last();
-                    if (!$e)
-                        return;
-
-                    self::$terminal->writeln();
-                    self::$terminal->write("| ", "light_red, bold");
-                    self::$terminal->writeln("Error (" . $e['type']  . "): " . $e['message'] . " ", "light_red");
-
-                    if (self::$level > 1) {
-                        self::$terminal->write("| ", "light_red, bold");
-                        self::$terminal->writeln(
-                            "line: " . $e['line'] .
-                            ", file: " . $e['file'],
-                            "info"
-                        );
-                    }
-                });
-            }
+            # errors will be reported by the Debug only uptill level 3
+            error_reporting(($level < 4) ? 0 : E_ALL);
         }
 
         /**
@@ -182,6 +142,69 @@ namespace IrfanTOOR
         }
 
         /**
+         * Displays the exception
+         */
+        public static function exceptionHandler($e)
+        {
+            if (!self::$level)
+                return;
+
+            self::$terminal->write("| ", "light_red, bold");
+            self::$terminal->writeln("Exception: " . $e->getMessage() . " ", "light_red");
+
+            if (self::$level > 1) {
+                self::$terminal->write("| ", "light_red, bold");
+                self::$terminal->writeln(
+                    "line: " . ($e->getLine() ?? '') .
+                    ", file: " . ($e->getFile() ?? ''),
+                    "info"
+                );
+            }
+
+            if (self::$level > 2) {
+                self::trace($e->getTrace());
+            }
+        }
+
+        /**
+         * Display the error
+         */
+        public static function errorHandler($type, $message, $file, $line = null)
+        {
+            if (!self::$level)
+                return;
+
+            self::$terminal->write("| ", "light_red, bold");
+            self::$terminal->writeln("Error (" . $type  . "): " . $message . " ", "light_red");
+
+            if (self::$level > 1) {
+                self::$terminal->write("| ", "light_red, bold");
+                self::$terminal->writeln(
+                    "line: " . $line .
+                    ", file: " . $file,
+                    "info"
+                );
+            }
+
+            if (self::$level > 2)
+                self::trace();
+        }
+
+        /**
+         * Displays the errors, if debug level permits, causing the shutdown
+         */
+        public static function shutdown()
+        {
+            if (!self::$level)
+                return;
+
+            while ($e = error_get_last()) {
+                self::errorHandler($e['type'], $e['message'], $e['file'], $e['line']);
+                error_clear_last();
+            }
+        }
+
+        /**
          * Dumps the passed variable in a readable manner
          *
          * @param mixed $var        The variable to be dumped
@@ -189,7 +212,7 @@ namespace IrfanTOOR
          */
         public static function dump($var, bool $show_trace = true)
         {
-            if (self::$level < 1)
+            if (!self::$level)
                 return;
 
             $var = self::prepare($var);
@@ -208,21 +231,24 @@ namespace IrfanTOOR
         }
 
         /**
-         * Dumps the backtrace
+         * Dumps the debug backtrace or the provided trace
          */
         protected static function trace()
         {
+            if (self::$level < 2)
+                return;
+
             $trace = debug_backtrace();
-            $color = "info";
+            $color = "dark";
 
             foreach ($trace as $t) {
                 if (!isset($t['file']))
                     continue;
-                
-                if (strpos($t['file'], 'src/Debug.php') !== false)
+
+                if (strpos($t['file'] ?? "", 'src/Debug.php') !== false)
                     continue;
 
-                $file  = self::limitPath($t['file']);
+                $file  = self::limitPath($t['file'] ?? "");
                 $line  = $t['line'] ?? '';
                 $class = $t['class'] ?? '';
                 $func = $t['function'] ?? '';
@@ -232,6 +258,9 @@ namespace IrfanTOOR
                 self::$terminal->write($text, $color);
                 self::$terminal->writeln(' -- ' . $ftag, 'dark');
                 $color = "light_gray";
+
+                if (self::$level < 3)
+                    break;
             }
         }
     }
@@ -262,5 +291,36 @@ namespace
     {
         Debug::dump($var, $show_trace);
         exit;
+    }
+
+    /**
+     * Logs a numbered checkpoint,  so that the flow of execution be checked.
+     *
+     * Place checkpoint tag/function at control points to verify the flow. Though it
+     * does not print any thing when the debug level is set to 0 (i.e. in production),
+     * but it is strongly recommended to remove the tags, when once the flow has been
+     * corrected, for the sake of performance.
+     *
+     * Note: An example tag is given bellow, note that The '// ' is not part of the tag
+     */
+    // /** ---------- {{{ CHECKPOINT **/ checkpoint(); /** CHECKPOINT }}} ---------- **/
+    function checkpoint()
+    {
+        if (!debug::getLevel())
+            return;
+
+        static $n = 0;
+        $n++;
+        $trace = debug_backtrace();
+        $t = $trace[1];
+
+        $d = Debug::getInstance();
+        $o = $d->getOutput();
+
+        $o->writeln(
+            sprintf(" %3d| %3d| %s, ", $n, $trace[0]['line'], $trace[0]['file']) .
+            $t['class'] . "::" . $t['function'] . "()"
+            , "bg_black, white"
+        );
     }
 }
